@@ -13,10 +13,30 @@
             return params;
         }
 
+        // Base64 URL-safe decode function (handles URL-safe base64)
+        function base64UrlDecode(input) {
+            // Replace URL-safe chars and add padding if needed
+            input = input.replace(/-/g, '+').replace(/_/g, '/');
+            const pad = input.length % 4;
+            if (pad) {
+                input += new Array(5-pad).join('=');
+            }
+            try {
+                return atob(input);
+            } catch (e) {
+                console.error("Base64 decode error:", e);
+                return null;
+            }
+        }
+
         async function handleOAuthRedirect() {
             const urlParams = getUrlParams();
             const code = urlParams.get('code');
             const state = urlParams.get('state');
+            
+            document.getElementById('debug').innerHTML = '<p>Received callback</p>';
+            document.getElementById('debug').innerHTML += '<p>Code: ' + (code ? code.substring(0, 10) + '...' : 'None') + '</p>';
+            document.getElementById('debug').innerHTML += '<p>State: ' + (state ? state.substring(0, 10) + '...' : 'None') + '</p>';
             
             if (!code) {
                 document.getElementById('status').textContent = 'Error: No code found';
@@ -28,17 +48,29 @@
                 document.getElementById('status').textContent = 'Processing Xero callback...';
                 
                 // Get PKCE values from state
-                let pkceData = {};
+                let codeVerifier = null;
                 try {
                     // State format: xero_TIMESTAMP_BASE64PKCEDATA
                     const parts = state.split('_');
+                    document.getElementById('debug').innerHTML += '<p>State parts: ' + parts.length + '</p>';
+                    
                     if (parts.length >= 3) {
-                        const encodedPkce = parts[2];
-                        const decodedPkce = atob(encodedPkce);
-                        pkceData = JSON.parse(decodedPkce);
-                        console.log('Successfully extracted PKCE data from state', pkceData);
+                        const encodedData = parts[2];
+                        document.getElementById('debug').innerHTML += '<p>Encoded data: ' + encodedData.substring(0, 20) + '...</p>';
+                        
+                        // Decode the base64 data
+                        const decodedJson = base64UrlDecode(encodedData);
+                        document.getElementById('debug').innerHTML += '<p>Decoded JSON: ' + decodedJson.substring(0, 50) + '...</p>';
+                        
+                        const stateData = JSON.parse(decodedJson);
+                        codeVerifier = stateData.code_verifier;
+                        
+                        // Show success and code_verifier info
+                        console.log('Successfully extracted PKCE data', stateData);
                         document.getElementById('debug').innerHTML += '<p>Code Verifier: ' + 
-                            (pkceData.code_verifier ? pkceData.code_verifier.substring(0, 10) + '...' : 'Not Found') + '</p>';
+                            (codeVerifier ? codeVerifier.substring(0, 10) + '...' : 'Not Found') + '</p>';
+                        document.getElementById('debug').innerHTML += '<p>Code Verifier Length: ' + 
+                            (codeVerifier ? codeVerifier.length : '0') + '</p>';
                     }
                 } catch (e) {
                     console.error('Error parsing PKCE data from state:', e);
@@ -46,32 +78,34 @@
                 }
 
                 // Build redirect URL with all available data
-                const params = new URLSearchParams({
-                    code: code,
-                    state: state,
-                    service: 'xero'
-                });
+                const params = new URLSearchParams();
+                params.set('code', code);
+                params.set('state', state);
+                params.set('service', 'xero');
 
-                // Add PKCE values if we have them
-                if (pkceData.code_verifier) {
-                    params.set('code_verifier', pkceData.code_verifier);
-                    console.log('Added code_verifier to redirect params:', pkceData.code_verifier.substring(0, 10) + '...');
-                    document.getElementById('debug').innerHTML += '<p>Added code_verifier to redirect params</p>';
-                }
-                if (pkceData.code_challenge) {
-                    params.set('code_challenge', pkceData.code_challenge);
-                    console.log('Added code_challenge to redirect params:', pkceData.code_challenge);
+                // Add code_verifier if we have it (crucial for PKCE)
+                if (codeVerifier) {
+                    // Use encodeURIComponent for special characters
+                    const encodedVerifier = encodeURIComponent(codeVerifier);
+                    params.set('code_verifier', encodedVerifier);
+                    console.log('Added code_verifier to redirect params');
+                    document.getElementById('debug').innerHTML += '<p>Added encoded code_verifier to params</p>';
+                    document.getElementById('debug').innerHTML += '<p>Encoded verifier: ' + encodedVerifier.substring(0, 20) + '...</p>';
+                } else {
+                    document.getElementById('debug').innerHTML += '<p>WARNING: No code_verifier found!</p>';
                 }
 
-                // Redirect back to app
+                // Build the final redirect URL
                 const redirectUrl = `indexai://oauth2callback?${params.toString()}`;
                 console.log('Redirecting to:', redirectUrl);
-                document.getElementById('debug').innerHTML += '<p>Redirecting to app...</p>';
+                document.getElementById('debug').innerHTML += '<p>Redirect URL: ' + redirectUrl.substring(0, 50) + '...</p>';
                 
                 // Setting a small delay to ensure debug info is visible
+                document.getElementById('status').textContent = 'Redirecting to app in 3 seconds...';
                 setTimeout(() => {
+                    document.getElementById('status').textContent = 'Redirecting now...';
                     window.location.href = redirectUrl;
-                }, 1000);
+                }, 3000);
             } else {
                 // Handle Google OAuth (original behavior)
                 document.getElementById('status').textContent = 'Processing Google callback...';
@@ -88,6 +122,7 @@
             padding: 20px;
             max-width: 600px;
             margin: 0 auto;
+            line-height: 1.6;
         }
         .debug-info {
             background-color: #f5f5f5;
@@ -96,12 +131,22 @@
             margin-top: 20px;
             font-family: monospace;
             white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        h1 {
+            color: #333;
+        }
+        #status {
+            font-weight: bold;
+            color: #0066cc;
+            margin: 20px 0;
         }
     </style>
 </head>
 <body>
     <h1>IndexAI OAuth Redirect</h1>
     <div id="status">Processing OAuth callback...</div>
-    <div id="debug" class="debug-info">Debug info will appear here...</div>
+    <div id="debug" class="debug-info">Initializing...</div>
 </body>
-</html> 
+</html>  
