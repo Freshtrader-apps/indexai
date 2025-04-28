@@ -1,1 +1,77 @@
-<html><head><title>IndexAI OAuth Redirect</title></head><body><h1>IndexAI OAuth Redirect</h1><div id="code"></div><script>const urlParams=new URLSearchParams(window.location.search);const code=urlParams.get("code");document.getElementById("code").textContent=code||"No code found";window.location.href="indexai://oauth2callback?code="+encodeURIComponent(code||"");</script></body></html>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IndexAI OAuth Redirect</title>
+    <script>
+        // PKCE helper functions for Xero
+        function generateCodeVerifier() {
+            const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+            let verifier = '';
+            for (let i = 0; i < 128; i++) {
+                verifier += charset.charAt(Math.floor(Math.random() * charset.length));
+            }
+            return verifier;
+        }
+
+        function base64URLEncode(str) {
+            return btoa(str)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+
+        async function sha256(buffer) {
+            const msgBuffer = new TextEncoder().encode(buffer);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            return new Uint8Array(hashBuffer);
+        }
+
+        async function handleOAuthRedirect() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const state = urlParams.get('state');
+            
+            if (!code) {
+                document.getElementById('status').textContent = 'Error: No code found';
+                return;
+            }
+
+            // Check if this is a Xero callback (state will contain 'xero')
+            if (state && state.toLowerCase().includes('xero')) {
+                document.getElementById('status').textContent = 'Processing Xero callback...';
+                
+                // Generate PKCE values for Xero
+                const codeVerifier = generateCodeVerifier();
+                const encoder = new TextEncoder();
+                const codeChallenge = base64URLEncode(await sha256(encoder.encode(codeVerifier)));
+
+                // Store PKCE values in local storage
+                localStorage.setItem('code_verifier', codeVerifier);
+                localStorage.setItem('code_challenge', codeChallenge);
+
+                // Redirect back to app with code and PKCE values
+                const redirectUrl = `indexai://oauth2callback?` + new URLSearchParams({
+                    code: code,
+                    state: state,
+                    code_verifier: codeVerifier,
+                    code_challenge: codeChallenge,
+                    service: 'xero'
+                }).toString();
+
+                window.location.href = redirectUrl;
+            } else {
+                // Handle Google OAuth (original behavior)
+                document.getElementById('status').textContent = 'Processing Google callback...';
+                window.location.href = `indexai://oauth2callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state || '')}&service=google`;
+            }
+        }
+
+        // Run when page loads
+        window.onload = handleOAuthRedirect;
+    </script>
+</head>
+<body>
+    <h1>IndexAI OAuth Redirect</h1>
+    <div id="status">Processing OAuth callback...</div>
+</body>
+</html> 
