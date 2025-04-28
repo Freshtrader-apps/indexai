@@ -27,7 +27,7 @@
             if (state && state.toLowerCase().includes('xero')) {
                 document.getElementById('status').textContent = 'Processing Xero callback...';
                 
-                // Get PKCE values from state if they were passed
+                // Get PKCE values from state
                 let pkceData = {};
                 try {
                     // State format: xero_TIMESTAMP_BASE64PKCEDATA
@@ -36,18 +36,11 @@
                         const encodedPkce = parts[2];
                         const decodedPkce = atob(encodedPkce);
                         pkceData = JSON.parse(decodedPkce);
+                        console.log('Successfully extracted PKCE data from state');
                     }
                 } catch (e) {
                     console.error('Error parsing PKCE data from state:', e);
                 }
-
-                // Get stored PKCE values from localStorage as fallback
-                const storedVerifier = localStorage.getItem('xero_code_verifier');
-                const storedChallenge = localStorage.getItem('xero_code_challenge');
-                
-                // Use either passed PKCE values or stored ones
-                const codeVerifier = pkceData.code_verifier || storedVerifier;
-                const codeChallenge = pkceData.code_challenge || storedChallenge;
 
                 // Build redirect URL with all available data
                 const params = new URLSearchParams({
@@ -56,15 +49,15 @@
                     service: 'xero'
                 });
 
-                // Only add PKCE values if we have them
-                if (codeVerifier && codeChallenge) {
-                    params.set('code_verifier', codeVerifier);
-                    params.set('code_challenge', codeChallenge);
+                // Add PKCE values if we have them
+                if (pkceData.code_verifier) {
+                    params.set('code_verifier', pkceData.code_verifier);
+                    console.log('Added code_verifier to redirect params');
                 }
-
-                // Clear stored PKCE values as they're no longer needed
-                localStorage.removeItem('xero_code_verifier');
-                localStorage.removeItem('xero_code_challenge');
+                if (pkceData.code_challenge) {
+                    params.set('code_challenge', pkceData.code_challenge);
+                    console.log('Added code_challenge to redirect params');
+                }
 
                 // Redirect back to app
                 const redirectUrl = `indexai://oauth2callback?${params.toString()}`;
